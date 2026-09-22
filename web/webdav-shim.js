@@ -35,7 +35,9 @@ var CloudyTIC80Shim = (function () {
       if ((xhr.status !== 207 && xhr.status !== 200) || !xhr.responseText) return;
       var doc = new DOMParser().parseFromString(xhr.responseText, 'application/xml');
       var responses = doc.getElementsByTagNameNS('DAV:', 'response');
-      var selfPath = davUrl(relDir).replace(/\/+$/, '');
+      // webdav's own href values are relative to ITS namespace (nginx strips the
+      // /dav/ prefix before proxying), so compare against relDir, not davUrl(relDir).
+      var selfPath = relDir.replace(/\/+$/, '');
       var chain = Promise.resolve();
       for (var i = 0; i < responses.length; i++) {
         (function (respEl) {
