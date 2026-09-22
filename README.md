@@ -75,17 +75,18 @@ docker run -d \
   cloudytic80
 ```
 
-On first start, a default `config/webdav-config.yml` (with two placeholder users,
-`alice`/`changeme` and `bob`/`changeme`) is seeded automatically. **Edit it before
-exposing this anywhere but localhost** — see below.
+On first start, a default `config/webdav-config.yml` is seeded automatically with no
+users configured. With no users, nginx and webdav both deny every request — the site
+is fully locked out (safe, but unusable) until you **add at least one user** — see
+below.
 
-Open `http://localhost:8080/` — you'll be prompted for credentials immediately, before
-TIC-80 loads. Log in, and `save`/`load`/`files` in the TIC-80 console now read and
-write `/config/data/<username>/` on the host.
+Open `http://localhost:8080/` — once you've added a user, you'll be prompted for
+credentials immediately, before TIC-80 loads. Log in, and `save`/`load`/`files` in the
+TIC-80 console now read and write `/config/data/<username>/` on the host.
 
 This container does not terminate TLS. Basic Auth sends credentials on every request,
-so put it behind a TLS-terminating reverse proxy (nginx, Caddy, Traefik, etc.) for
-anything beyond local testing.
+so once you've added users, put this behind a TLS-terminating reverse proxy (nginx,
+Caddy, Traefik, etc.) for anything beyond local testing.
 
 ## Setting up in Portainer
 
@@ -118,8 +119,8 @@ No CLI needed. A `docker-compose.yml` is included at the repo root — Portainer
    Leave any of these unset in Portainer's env-var form to keep the default.
 5. Click **Deploy the stack**. Once it's up, go to the container's **Volumes** or use
    Portainer's built-in file browser/console to confirm `/config/webdav-config.yml` was
-   seeded, then edit it there (or `docker cp` it out, edit, and copy back) to replace
-   the placeholder `alice`/`bob` accounts before exposing this beyond localhost.
+   seeded, then edit it there (or `docker cp` it out, edit, and copy back) to add at
+   least one user — with none configured, nobody (including you) can log in.
 6. To rebuild after pulling a newer commit (e.g. after bumping `TIC80_VERSION` in the
    `Dockerfile`), use the stack's **Pull and redeploy** / **Update the stack** action —
    Portainer re-clones and rebuilds automatically.
@@ -134,7 +135,9 @@ machines.
 ## Managing users
 
 Edit `config/webdav-config.yml` (created on first run from
-`root/defaults/webdav-config.yml`) directly on the host, then restart the container:
+`root/defaults/webdav-config.yml`) directly on the host, then restart the container.
+It ships with no users configured — meaning nobody can log in at all — and a
+commented-out template showing the shape of an entry:
 
 ```yaml
 users:
@@ -148,8 +151,10 @@ users:
     permissions: CRUD
 ```
 
-- Add a user: append another entry with a unique `username`, a `password`, and a
-  `directory` under `/config/data/<username>`.
+- Add a user: uncomment the `users:` key and the template entry below it, then set a
+  unique `username`, a `password`, and a `directory` under `/config/data/<username>`.
+- Add another user: add another `- username: ...` entry under the same `users:` key
+  (it's a YAML list) — don't repeat the `users:` key itself.
 - Remove a user: delete their entry (their files under `/config/data/<username>` are
   left in place — remove that folder yourself if you want it gone too).
 - Passwords are stored in **plain text** by design (no hashing step to manage) — keep

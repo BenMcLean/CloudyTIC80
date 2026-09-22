@@ -8,18 +8,26 @@
 # Both nginx (whole-site login) and webdav (per-user folder scoping) read their
 # credentials from this one file - nginx's htpasswd is regenerated from it automatically
 # on every container start.
+#
+# With no users configured, nobody can log in at all (nginx and webdav both deny every
+# request) - this is safe but unusable until you add at least one user.
+#
+# To add a user, uncomment the "users:" key and the template entry below it, then edit
+# the username, password, and directory. To add further users, add more entries (each
+# starting with "- username:") under the same "users:" key - don't repeat the "users:"
+# key itself, it's a single list.
 address: 127.0.0.1
 port: 6065
 directory: /config/data
 permissions: none
 cors:
   enabled: false
-users:
-  - username: alice
-    password: changeme
-    directory: /config/data/alice
-    permissions: CRUD
-  - username: bob
-    password: changeme
-    directory: /config/data/bob
-    permissions: CRUD
+# users:
+#   - username: alice
+#     password: changeme
+#     directory: /config/data/alice
+#     permissions: CRUD
+#   - username: bob
+#     password: changeme
+#     directory: /config/data/bob
+#     permissions: CRUD
