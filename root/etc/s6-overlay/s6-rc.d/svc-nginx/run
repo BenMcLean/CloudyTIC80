@@ -1,4 +1,6 @@
 #!/usr/bin/with-contenv bash
-mkdir -p /run/nginx /var/lib/nginx/tmp /var/lib/nginx/logs /var/log/nginx
-chown -R abc:abc /run/nginx /var/lib/nginx /var/log/nginx
-exec s6-setuidgid abc nginx -g "daemon off;"
+# nginx master runs as root (needed to open /dev/stdout/stderr and bind port 80);
+# workers drop to abc via nginx.conf's `user abc;` directive.
+mkdir -p /run/nginx /var/lib/nginx/tmp
+chown -R abc:abc /var/lib/nginx/tmp
+exec nginx -g "daemon off;"
