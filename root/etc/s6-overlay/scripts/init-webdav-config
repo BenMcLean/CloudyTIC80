@@ -1,0 +1,23 @@
+#!/usr/bin/with-contenv bash
+set -e
+
+if [[ ! -f /config/webdav-config.yml ]]; then
+    cp /defaults/webdav-config.yml /config/webdav-config.yml
+fi
+
+mkdir -p /config/data
+
+python3 - <<'PYEOF'
+import os
+import yaml
+
+with open('/config/webdav-config.yml') as f:
+    cfg = yaml.safe_load(f)
+
+for user in cfg.get('users', []):
+    directory = user.get('directory')
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+PYEOF
+
+chown -R abc:abc /config

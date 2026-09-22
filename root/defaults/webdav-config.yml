@@ -1,0 +1,25 @@
+# CloudyTIC80 user accounts.
+#
+# Edit this file (mounted at /config/webdav-config.yml on the host) to add, remove, or
+# change users, then restart the container. Passwords are stored in plain text
+# deliberately - keep this file's permissions private, and always run this container
+# behind HTTPS/TLS, since Basic Auth sends credentials on every request.
+#
+# Both nginx (whole-site login) and webdav (per-user folder scoping) read their
+# credentials from this one file - nginx's htpasswd is regenerated from it automatically
+# on every container start.
+address: 127.0.0.1
+port: 6065
+directory: /config/data
+permissions: none
+cors:
+  enabled: false
+users:
+  - username: alice
+    password: changeme
+    directory: /config/data/alice
+    permissions: CRUD
+  - username: bob
+    password: changeme
+    directory: /config/data/bob
+    permissions: CRUD

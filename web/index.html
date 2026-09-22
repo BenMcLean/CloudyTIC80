@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CloudyTIC80</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #140c1c; height: 100%; overflow: hidden; }
+  #canvas { display: block; margin: 0 auto; outline: none; image-rendering: pixelated; }
+</style>
+</head>
+<body>
+<canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+<script src="webdav-shim.js"></script>
+<script>
+  var Module = {
+    canvas: document.getElementById('canvas'),
+    print: function (text) { console.log(text); },
+    printErr: function (text) { console.error(text); },
+    preRun: [],
+  };
+  CloudyTIC80Shim.install(Module);
+</script>
+<script src="tic80.js"></script>
+</body>
+</html>

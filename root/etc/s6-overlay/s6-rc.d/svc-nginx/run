@@ -1,0 +1,4 @@
+#!/usr/bin/with-contenv bash
+mkdir -p /run/nginx /var/lib/nginx/tmp /var/lib/nginx/logs /var/log/nginx
+chown -R abc:abc /run/nginx /var/lib/nginx /var/log/nginx
+exec s6-setuidgid abc nginx -g "daemon off;"
