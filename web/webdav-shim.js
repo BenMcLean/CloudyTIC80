@@ -130,6 +130,10 @@ var CloudyTIC80Shim = (function () {
           var isCollection = respEl.getElementsByTagNameNS('DAV:', 'collection').length > 0;
           var childRel = (relDir === '/' ? '' : relDir) + '/' + name;
           var childFs = fsDir + '/' + name;
+          // Never pull the reserved .local folder down locally, even if stale
+          // data for it exists on the server from before this exclusion was
+          // added (see isReservedLocalDir).
+          if (isReservedLocalDir(childRel)) return;
           chain = chain.then(function () {
             if (isCollection) {
               try { FS.mkdir(childFs); } catch (e) { /* already exists */ }
@@ -178,6 +182,20 @@ var CloudyTIC80Shim = (function () {
   function pushChangesToServer(FS) {
     var entries = [];
     collectEntries(FS, mountDir, entries);
+
+    // TIC-80 writes its own internal bookkeeping (including cached copies of
+    // carts downloaded from tic80.com/SURF) under ".local/" - see
+    // isReservedLocalDir. That's never the user's own work, so it must never
+    // be pushed to the server, and any stale tracking of it (e.g. from before
+    // this exclusion existed) is dropped silently rather than fought over
+    // with DELETE requests below.
+    entries = entries.filter(function (entry) {
+      return !isReservedLocalDir(toRelPath(entry.path));
+    });
+    Object.keys(knownFiles).forEach(function (path) {
+      if (isReservedLocalDir(toRelPath(path))) delete knownFiles[path];
+    });
+
     var seen = Object.create(null);
     var chain = Promise.resolve();
     var failures = [];
@@ -275,45 +293,37 @@ var CloudyTIC80Shim = (function () {
     return (dir.replace(/\/+$/, '') + '/' + name).replace(/\/{2,}/g, '/');
   }
 
-  // "tic80.com" is a virtual folder TIC-80's own console lets you `cd` into
-  // (same mechanism whether you get there via `cd tic80.com` or the SURF UI) -
-  // it's a proxy onto the real tic80.com site, not real storage under mountDir,
-  // and nginx maps json/cart/export/js requests there directly (see the nginx
-  // conf). If FS.cwd() ever reports being inside it (or a subfolder of it),
-  // that's storage this shim must never write into.
-  function isReservedVirtualDir(relDir) {
-    return /^\/tic80\.com(\/|$)/i.test(relDir);
-  }
-
-  // TIC-80's console `cd` presumably chdir()s for real, which Emscripten's FS
-  // module reflects in FS.cwd() - so dropped files land in whatever folder the
-  // user is currently browsing in TIC-80. Falls back to the storage root if
-  // that assumption turns out to be wrong (cwd not inside mounted storage) or
-  // if cwd resolves into the reserved tic80.com virtual folder.
-  function currentUploadDir(FS) {
-    try {
-      var cwd = FS.cwd();
-      if (cwd && cwd.indexOf(mountDir) === 0 && !isReservedVirtualDir(toRelPath(cwd))) {
-        return cwd;
-      }
-    } catch (e) { /* ignore */ }
+  // TIC-80's console `cd` (including into its "tic80.com" online-browsing
+  // target) never calls a real chdir() - confirmed by reading TIC-80 v1.2.0
+  // source (src/studio/fs.c): the console's notion of "current directory" is
+  // just an internal C string (tic_fs.work), built by plain snprintf path
+  // concatenation and never passed through Emscripten's FS module. FS.cwd()
+  // therefore can never reflect what folder the player appears to be browsing
+  // in TIC-80 - there is no hook this shim can use to know that. Dropped
+  // files always land at the root of the user's storage.
+  function uploadDir() {
     return mountDir;
   }
 
+  // TIC-80 caches carts downloaded via tic80.com/SURF on real disk, under
+  // ".local/cache/<hash>.tic" relative to the same root Emscripten mounts as
+  // IDBFS (confirmed from source: TIC_CACHE is TIC_LOCAL + "cache/", and
+  // TIC_LOCAL is ".local/" on the Emscripten build - src/studio/studio.h,
+  // src/studio/fs.c). That's disposable, re-fetchable cache of OTHER people's
+  // carts, not the user's own work, and syncing it caused a real bug: it was
+  // being swept into pushChangesToServer and erroring against WebDAV every
+  // time a player merely loaded (not saved) a cart from tic80.com. The whole
+  // ".local" tree - all of it internal/hidden TIC-80 bookkeeping by
+  // convention, not just this one confirmed cache path - is excluded from
+  // sync in both directions.
+  function isReservedLocalDir(relDir) {
+    return /^\/\.local(\/|$)/.test(relDir);
+  }
+
   function handleDroppedFiles(FS, fileList) {
-    var rawCwd = null;
-    try { rawCwd = FS.cwd(); } catch (e) { /* ignore */ }
-    var dir = currentUploadDir(FS);
+    var dir = uploadDir();
     var relDir = toRelPath(dir);
-    var redirectedFromVirtual =
-      rawCwd && rawCwd.indexOf(mountDir) === 0 && isReservedVirtualDir(toRelPath(rawCwd));
-    // Since this shim can't independently verify whether FS.cwd() truly tracks
-    // TIC-80's own idea of "current folder" (including inside SURF), always
-    // name the actual destination back to the user rather than assuming they
-    // know where "here" resolved to.
-    var dirLabel = redirectedFromVirtual
-      ? 'the root folder ("tic80.com" is a reserved online-cart folder, not real storage)'
-      : (relDir === '/' ? 'the root folder' : ('"' + relDir + '"'));
+    var dirLabel = relDir === '/' ? 'the root folder' : ('"' + relDir + '"');
     var files = Array.prototype.slice.call(fileList);
     var chain = Promise.resolve();
     var uploaded = 0;
