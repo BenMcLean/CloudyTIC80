@@ -18,8 +18,14 @@ ARG BASEIMAGE_ALPINE_TAG=3.21-6689918e-ls38
 # Stage: build the official TIC-80 web/WASM player, unmodified, from source.
 # We only ever consume tic80.js/tic80.wasm from this stage - never TIC-80's
 # own build/html/index.html, which we replace with our own shell.
+#
+# Pinned to linux/amd64 regardless of the final image's target platform: the
+# output is WASM, not a native binary, so it's the same bytes either way, and
+# building it requires gcc-multilib (32-bit x86 build tools - mirrors TIC-80's
+# own html job, which likewise only ever builds on ubuntu-latest/amd64), which
+# has no arm64 equivalent and can't be installed under arm64 emulation.
 # ---------------------------------------------------------------------------
-FROM emscripten/emsdk:${EMSDK_VERSION} AS tic80-builder
+FROM --platform=linux/amd64 emscripten/emsdk:${EMSDK_VERSION} AS tic80-builder
 ARG TIC80_VERSION
 
 RUN apt-get update && \
