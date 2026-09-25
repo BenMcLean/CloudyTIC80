@@ -15,46 +15,8 @@ var CloudyTIC80Shim = (function () {
   var everFullyLoaded = false;
   var banner = null;
 
-  // Saving a cart under this name (any extension - e.g. "download.tic",
-  // "download.wasmp", "download.lua") skips server storage entirely and
-  // instead pushes the file straight to the browser's Save As dialog, so
-  // players can pull a cart down to their own device. Matched against the
-  // filename stem only, case-insensitively.
-  var DOWNLOAD_TRIGGER = 'download';
-
   function davUrl(relPath) {
     return DAV_PREFIX + relPath;
-  }
-
-  function isDownloadTrigger(fsPath) {
-    var base = fsPath.split('/').pop();
-    var stem = base.replace(/\.[^./]+$/, '');
-    return stem.toLowerCase() === DOWNLOAD_TRIGGER;
-  }
-
-  function triggerBrowserDownload(fsPath, data) {
-    var name = fsPath.split('/').pop();
-    var blob = new Blob([data], { type: 'application/octet-stream' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-    showNotice('Downloaded ' + name + ' to your device.');
-  }
-
-  function showNotice(message) {
-    var el = ensureBanner();
-    el.textContent = message;
-    el.style.background = '#0d6b2f';
-    el.style.display = 'block';
-    setTimeout(function () {
-      el.style.background = '#8b0d1e';
-      el.style.display = 'none';
-    }, 4000);
   }
 
   function toRelPath(fullPath) {
@@ -215,29 +177,6 @@ var CloudyTIC80Shim = (function () {
         }
         return;
       }
-      if (isDownloadTrigger(entry.path)) {
-        // Only fire when this save actually changed the file - otherwise a file
-        // merely synced down from the server on a previous load (with matching
-        // size/mtime already in knownFiles) would re-trigger a download popup on
-        // every unrelated save/delete elsewhere in the tree. Leaving `known` and
-        // the local file untouched here also means the server's own copy (if any
-        // pre-dates this feature) is never pushed to, overwritten, or deleted.
-        if (known && known.size === entry.size && known.mtime === entry.mtime) return;
-        chain = chain.then(function () {
-          var data;
-          try {
-            data = FS.readFile(entry.path);
-          } catch (e) {
-            failures.push(e);
-            return;
-          }
-          triggerBrowserDownload(entry.path, data);
-          try { FS.unlink(entry.path); } catch (e) { /* ignore */ }
-          delete knownFiles[entry.path];
-        });
-        return;
-      }
-
       if (!known || known.size !== entry.size || known.mtime !== entry.mtime) {
         chain = chain.then(function () {
           var data;
@@ -289,22 +228,6 @@ var CloudyTIC80Shim = (function () {
     });
   }
 
-  function joinPath(dir, name) {
-    return (dir.replace(/\/+$/, '') + '/' + name).replace(/\/{2,}/g, '/');
-  }
-
-  // TIC-80's console `cd` (including into its "tic80.com" online-browsing
-  // target) never calls a real chdir() - confirmed by reading TIC-80 v1.2.0
-  // source (src/studio/fs.c): the console's notion of "current directory" is
-  // just an internal C string (tic_fs.work), built by plain snprintf path
-  // concatenation and never passed through Emscripten's FS module. FS.cwd()
-  // therefore can never reflect what folder the player appears to be browsing
-  // in TIC-80 - there is no hook this shim can use to know that. Dropped
-  // files always land at the root of the user's storage.
-  function uploadDir() {
-    return mountDir;
-  }
-
   // TIC-80 caches carts downloaded via tic80.com/SURF on real disk, under
   // ".local/cache/<hash>.tic" relative to the same root Emscripten mounts as
   // IDBFS (confirmed from source: TIC_CACHE is TIC_LOCAL + "cache/", and
@@ -320,65 +243,10 @@ var CloudyTIC80Shim = (function () {
     return /^\/\.local(\/|$)/.test(relDir);
   }
 
-  function handleDroppedFiles(FS, fileList) {
-    var dir = uploadDir();
-    var relDir = toRelPath(dir);
-    var dirLabel = relDir === '/' ? 'the root folder' : ('"' + relDir + '"');
-    var files = Array.prototype.slice.call(fileList);
-    var chain = Promise.resolve();
-    var uploaded = 0;
-
-    files.forEach(function (file) {
-      chain = chain.then(function () {
-        return file.arrayBuffer().then(function (buf) {
-          var fsPath = joinPath(dir, file.name);
-          var exists = true;
-          try { FS.stat(fsPath); } catch (e) { exists = false; }
-          if (exists && !window.confirm('Overwrite "' + file.name + '" in ' + dirLabel + '?')) {
-            return;
-          }
-          FS.writeFile(fsPath, new Uint8Array(buf));
-          uploaded++;
-        });
-      });
-    });
-
-    return chain.then(function () {
-      if (!uploaded) return;
-      return new Promise(function (resolve, reject) {
-        FS.syncfs(false, function (err) {
-          if (err) reject(err); else resolve();
-        });
-      }).then(function () {
-        showNotice(
-          'Uploaded ' + uploaded + ' file' + (uploaded === 1 ? '' : 's') +
-          ' to ' + dirLabel + '.'
-        );
-      });
-    });
-  }
-
-  function installDragAndDrop(FS) {
-    var canvas = document.getElementById('canvas');
-    if (!canvas) return;
-    canvas.addEventListener('dragover', function (e) { e.preventDefault(); });
-    canvas.addEventListener('drop', function (e) {
-      e.preventDefault();
-      if (mountDir === null) return;
-      var fileList = e.dataTransfer && e.dataTransfer.files;
-      if (!fileList || !fileList.length) return;
-      handleDroppedFiles(FS, fileList).catch(function (err) {
-        console.error('CloudyTIC80: drag-and-drop upload failed', err);
-        showError('Could not upload the dropped file(s).');
-      });
-    });
-  }
-
   function install(Module) {
     Module.preRun = Module.preRun || [];
     Module.preRun.push(function () {
       var FS = Module.FS;
-      installDragAndDrop(FS);
 
       var realMount = FS.mount;
       FS.mount = function (type, opts, mountpoint) {
