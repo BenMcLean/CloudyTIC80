@@ -257,3 +257,7 @@ execline, not bash — each `up` file here is a one-line execline shim
 (`with-contenv /etc/s6-overlay/scripts/<name>`) that chains into the real bash script
 under `scripts/`, which is invoked as its own process and so gets normal shebang
 handling.
+
+# Other Projects
+- [CloudyDoom](https://github.com/BenMcLean/CloudyDoom): Multiplayer Doom, playable straight in the browser, pointed at your own dedicated server.
+- [CloudyQuake](https://github.com/BenMcLean/CloudyQuake): Multiplayer Quake, playable straight in the browser, pointed at your own dedicated server.
