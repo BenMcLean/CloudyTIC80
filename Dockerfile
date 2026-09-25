@@ -34,8 +34,6 @@ RUN git init && \
     git submodule update --init --recursive --depth 1
 
 # Mirrors the "html" job of TIC-80's own .github/workflows/build.yml.
-# PRO is built unconditionally - this image only ever produces the Pro edition, not a
-# choice exposed at build time.
 RUN mkdir -p build && cd build && \
     emcmake cmake -G Ninja \
         -DBUILD_SDLGPU=On \

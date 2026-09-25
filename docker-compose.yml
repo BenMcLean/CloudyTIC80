@@ -1,7 +1,6 @@
 services:
   cloudytic80:
-    build: .
-    image: cloudytic80:latest
+    image: ghcr.io/benmclean/cloudytic80:latest
     container_name: cloudytic80
     restart: unless-stopped
     environment:

@@ -62,6 +62,53 @@ redirects them to a WebDAV server over HTTP.
 
 ## Quick start
 
+A prebuilt image is published to GHCR on every push to `master` (`linux/amd64` only)
+and on every release tag (both `linux/amd64` and `linux/arm64`).
+Paste this into a `docker-compose.yml` and run `docker compose up -d`:
+
+```yaml
+services:
+  cloudytic80:
+    image: ghcr.io/benmclean/cloudytic80:latest
+    container_name: cloudytic80
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    ports:
+      # "host:container" - only change the host side (left of the colon)
+      # Leave ":80" (right of the colon) exactly as shown.
+      - "8080:80"
+    volumes:
+      # "host:container" - only change the host side (left of the colon)
+      # Leave ":/config" (right of the colon) exactly as shown.
+      - ./config:/config
+```
+
+That's it — no clone, no build. On first start, a default `config/webdav-config.yml`
+is seeded automatically with no users configured. With no users, nginx and webdav both
+deny every request — the site is fully locked out (safe, but unusable) until you
+**add at least one user**, see [Managing users](#managing-users) below.
+
+Open `http://localhost:8080/` — once you've added a user, you'll be prompted for
+credentials immediately, before TIC-80 loads. Log in, and `save`/`load`/`files` in the
+TIC-80 console now read and write `/config/data/<username>/` on the host.
+
+This container does not terminate TLS. Basic Auth sends credentials on every request,
+so once you've added users, put this behind a TLS-terminating reverse proxy (nginx,
+Caddy, Traefik, etc.) for anything beyond local testing.
+
+To pin a specific release instead of always floating on `latest`, use a tag like
+`ghcr.io/benmclean/cloudytic80:v2026-09-24` — see this repo's
+[Packages](https://github.com/BenMcLean/CloudyTIC80/pkgs/container/cloudytic80) page
+for the full list of published tags.
+
+## Building from source
+
+Only needed if you want to modify the image yourself rather than pull the published
+one:
+
 ```bash
 docker build -t cloudytic80 .
 
@@ -75,18 +122,8 @@ docker run -d \
   cloudytic80
 ```
 
-On first start, a default `config/webdav-config.yml` is seeded automatically with no
-users configured. With no users, nginx and webdav both deny every request — the site
-is fully locked out (safe, but unusable) until you **add at least one user** — see
-below.
-
-Open `http://localhost:8080/` — once you've added a user, you'll be prompted for
-credentials immediately, before TIC-80 loads. Log in, and `save`/`load`/`files` in the
-TIC-80 console now read and write `/config/data/<username>/` on the host.
-
-This container does not terminate TLS. Basic Auth sends credentials on every request,
-so once you've added users, put this behind a TLS-terminating reverse proxy (nginx,
-Caddy, Traefik, etc.) for anything beyond local testing.
+Same first-run behavior as above: no users are seeded, so you must
+[add at least one](#managing-users) before the site is usable.
 
 ## Setting up in Portainer
 
@@ -99,9 +136,11 @@ No CLI needed. A `docker-compose.yml` is included at the repo root — Portainer
 3. Choose **Repository** as the build method:
    - **Repository URL**: this repo's URL.
    - **Compose path**: `docker-compose.yml` (the default, already correct).
-   - Portainer will `git clone` the repo and build the image itself from the
-     `Dockerfile` in the same repo — the first deploy takes a while, since it's
-     compiling TIC-80 from source via Emscripten.
+   - By default the compose file's `image:` points at the prebuilt
+     `ghcr.io/benmclean/cloudytic80:latest`, so Portainer just pulls it — no in-Portainer
+     build, fast to deploy. If you'd rather build from source (e.g. you're modifying the
+     `Dockerfile`), change `image:` to `build: .` in the stack's compose text first; the
+     first deploy will then take a while, since it's compiling TIC-80 via Emscripten.
 4. Portainer's stack editor only exposes an **environment variables** form, not a
    volumes UI — so, like a typical LSIO-style stack, the bind-mount source, host port,
    and PUID/PGID/TZ are all parameterized in `docker-compose.yml` via `${VAR:-default}`
@@ -121,16 +160,8 @@ No CLI needed. A `docker-compose.yml` is included at the repo root — Portainer
    Portainer's built-in file browser/console to confirm `/config/webdav-config.yml` was
    seeded, then edit it there (or `docker cp` it out, edit, and copy back) to add at
    least one user — with none configured, nobody (including you) can log in.
-6. To rebuild after pulling a newer commit (e.g. after bumping `TIC80_VERSION` in the
-   `Dockerfile`), use the stack's **Pull and redeploy** / **Update the stack** action —
-   Portainer re-clones and rebuilds automatically.
-
-If you'd rather not build via Portainer at all, build and push the image to a registry
-yourself (`docker build -t <registry>/cloudytic80:<tag> . && docker push ...`), then
-create the stack with the **Web editor** method instead, pointing `image:` at that
-registry tag rather than using `build: .` — this skips the in-Portainer build entirely
-and just pulls a prebuilt image, which is faster to deploy/update on subsequent
-machines.
+6. To update: **Pull and redeploy** / **Update the stack** — Portainer pulls the newer
+   `latest` image (or re-clones and rebuilds, if you switched to `build: .`).
 
 ## Managing users
 
@@ -191,20 +222,17 @@ configuration (users, passwords, per-user folders) lives in
 
 ## Build arguments (pinned versions)
 
-All upstream components are pinned explicitly; bump these deliberately when you want
-a newer version, rather than tracking a floating tag:
+| Build arg | What it pins |
+|---|---|
+| `TIC80_VERSION` | The TIC-80 revision to build. |
+| `EMSDK_VERSION` | The Emscripten SDK version used to compile TIC-80 to WASM. |
+| `WEBDAV_IMAGE` | The WebDAV server image its binary is extracted from. |
+| `BASEIMAGE_ALPINE_TAG` | The linuxserver.io Alpine base image tag. |
 
-| Build arg | Default | What it pins |
-|---|---|---|
-| `TIC80_VERSION` | `v1.2.0` | The TIC-80 git tag to build (Pro edition, unconditionally — not a build-time choice). |
-| `EMSDK_VERSION` | `6.0.10` | The Emscripten SDK version used to compile TIC-80 to WASM. |
-| `WEBDAV_IMAGE` | `hacdias/webdav:v5.16.0` | The WebDAV server image its binary is extracted from. |
-| `BASEIMAGE_ALPINE_TAG` | `3.21-6689918e-ls38` | The linuxserver.io Alpine base image tag. |
-
-Override at build time, e.g.:
+Any of these can be overridden at build time, e.g.:
 
 ```bash
-docker build --build-arg TIC80_VERSION=v1.3.0 -t cloudytic80 .
+docker build --build-arg TIC80_VERSION=<some-other-revision> -t cloudytic80 .
 ```
 
 ## Repo layout
