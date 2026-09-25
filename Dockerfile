@@ -1,7 +1,15 @@
 # syntax=docker/dockerfile:1
 
 # Pinned upstream versions. Bump these deliberately, never track a floating branch/tag.
-ARG TIC80_VERSION=v1.2.0
+#
+# TIC80_VERSION is a commit SHA, not the v1.2.0 tag, because it needs a fix that landed
+# on main after v1.2.0 and hasn't been cut into a tag yet: nesbox/TIC-80#3018 (merge
+# commit 8bbaba17571e4b494ed60be38a9e733e92d24ac3, merged 2026-09-23) fixes the
+# browser console's `add` command, which calls the now-unsupported Emscripten runtime
+# helper `writeArrayToMemory` - newer Emscripten no longer includes it by default, so
+# `add` throws a ReferenceError and never completes. Move this back to a tag once
+# upstream cuts a release that includes this fix.
+ARG TIC80_VERSION=8bbaba17571e4b494ed60be38a9e733e92d24ac3
 ARG EMSDK_VERSION=6.0.10
 ARG WEBDAV_IMAGE=hacdias/webdav:v5.16.0
 ARG BASEIMAGE_ALPINE_TAG=3.21-6689918e-ls38
@@ -19,8 +27,11 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
-RUN git clone --branch ${TIC80_VERSION} --depth 1 --recurse-submodules \
-        https://github.com/nesbox/TIC-80.git .
+RUN git init && \
+    git remote add origin https://github.com/nesbox/TIC-80.git && \
+    git fetch --depth 1 origin ${TIC80_VERSION} && \
+    git checkout FETCH_HEAD && \
+    git submodule update --init --recursive --depth 1
 
 # Mirrors the "html" job of TIC-80's own .github/workflows/build.yml.
 # PRO is built unconditionally - this image only ever produces the Pro edition, not a
