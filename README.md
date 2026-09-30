@@ -24,7 +24,7 @@ redirects them to a WebDAV server over HTTP.
   even loads)    │      (Authorization header forwarded as-is)     │
                  │                                                  │
                  │ hacdias/webdav :6065                             │
-                 │  - Basic Auth (webdav-config.yml, plaintext)     │
+                 │  - Basic Auth (webdav-config.yml)                │
                  │  - per-user directory scope /config/data/<u>     │
                  └────────────────────────────────────────────────┘
 ```
@@ -52,8 +52,9 @@ redirects them to a WebDAV server over HTTP.
   Because both share one origin, the browser's cached Basic Auth credentials are
   forwarded automatically on every request — there's exactly one login prompt, even
   though nginx and webdav each independently validate the same credentials.
-- **One credential source**: you only ever edit `/config/webdav-config.yml` (plaintext
-  passwords — a deliberate simplification; always run this behind HTTPS). An init
+- **One credential source**: you only ever edit `/config/webdav-config.yml` (passwords
+  plain text for easy setup, or `{bcrypt}`-hashed for better security; always run this
+  behind HTTPS). An init
   script regenerates nginx's htpasswd file from that same YAML on every container
   start, so there's nothing to keep in sync by hand.
 - **linuxserver.io conventions**: built on `ghcr.io/linuxserver/baseimage-alpine`
@@ -188,8 +189,21 @@ users:
   (it's a YAML list) — don't repeat the `users:` key itself.
 - Remove a user: delete their entry (their files under `/config/data/<username>` are
   left in place — remove that folder yourself if you want it gone too).
-- Passwords are stored in **plain text** by design (no hashing step to manage) — keep
-  this file's permissions private and always run behind HTTPS.
+- Passwords can be **plain text** (the default — fast setup and testing, nothing to
+  manage) or **bcrypt-hashed** (better security). Either way, keep this file's
+  permissions private and always run behind HTTPS. To hash one, generate a bcrypt hash
+  and paste it in quoted, with a `{bcrypt}` prefix:
+
+  ```bash
+  docker run --rm httpd:2-alpine htpasswd -nbBC 10 "" 'mypassword' | cut -d: -f2
+  ```
+
+  ```yaml
+  password: "{bcrypt}$2y$10$...."
+  ```
+
+  The quotes are required (a bare `{` starts a YAML map). Plain and hashed users can be
+  mixed in the same file; no other configuration is involved.
 - Restart the container after any edit — an init script regenerates both webdav's own
   auth and nginx's htpasswd from this one file on every start.
 

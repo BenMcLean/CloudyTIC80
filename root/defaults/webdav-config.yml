@@ -1,9 +1,16 @@
 # CloudyTIC80 user accounts.
 #
 # Edit this file (mounted at /config/webdav-config.yml on the host) to add, remove, or
-# change users, then restart the container. Passwords are stored in plain text
-# deliberately - keep this file's permissions private, and always run this container
-# behind HTTPS/TLS, since Basic Auth sends credentials on every request.
+# change users, then restart the container. Passwords may be plain text (fast setup and
+# testing) or bcrypt-hashed (better security) - either way keep this file's permissions
+# private, and always run this container behind HTTPS/TLS, since Basic Auth sends
+# credentials on every request.
+#
+# To use a bcrypt hash, generate one and put it in quotes with a "{bcrypt}" prefix:
+#   docker run --rm httpd:2-alpine htpasswd -nbBC 10 "" 'mypassword' | cut -d: -f2
+#   password: "{bcrypt}$2y$10$...."
+# The quotes are required (YAML would read a bare "{" as the start of a map). Plain and
+# hashed users can be mixed freely in the same file.
 #
 # Both nginx (whole-site login) and webdav (per-user folder scoping) read their
 # credentials from this one file - nginx's htpasswd is regenerated from it automatically
