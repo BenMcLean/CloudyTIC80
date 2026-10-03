@@ -1,0 +1,9 @@
+# This repo builds Linux containers, and its shell scripts (root/) run inside them.
+# CRLF shebangs fail with "not found" there. Force LF for all text files regardless
+# of the checkout platform's core.autocrlf.
+* text=auto eol=lf
+
+# Keep real binaries untouched.
+*.ico binary
+*.png binary
+*.wasm binary

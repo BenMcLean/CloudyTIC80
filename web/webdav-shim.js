@@ -286,7 +286,18 @@ var CloudyTIC80Shim = (function () {
     }
   }
 
+  // TIC-80's page shows its on-screen touch controls whenever the browser reports any
+  // touch capability (navigator.maxTouchPoints > 0), which also covers desktops and
+  // laptops that merely have a touchscreen. Keep them only where the primary pointer is
+  // actually touch (phones, tablets). This can only turn the controls off, never on.
+  function limitTouchControls(Module) {
+    if (window.matchMedia && !window.matchMedia('(pointer: coarse)').matches) {
+      Module.touchControlsEnabled = false;
+    }
+  }
+
   function install(Module) {
+    limitTouchControls(Module);
     redirectUpstream();
     Module.preRun = Module.preRun || [];
     Module.preRun.push(function () {

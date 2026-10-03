@@ -2,14 +2,15 @@
 
 # Pinned upstream versions. Bump these deliberately, never track a floating branch/tag.
 #
-# TIC80_VERSION is a commit SHA, not the v1.2.0 tag, because it needs a fix that landed
-# on main after v1.2.0 and hasn't been cut into a tag yet: nesbox/TIC-80#3018 (merge
-# commit 8bbaba17571e4b494ed60be38a9e733e92d24ac3, merged 2026-09-23) fixes the
-# browser console's `add` command, which calls the now-unsupported Emscripten runtime
-# helper `writeArrayToMemory` - newer Emscripten no longer includes it by default, so
-# `add` throws a ReferenceError and never completes. Move this back to a tag once
-# upstream cuts a release that includes this fix.
-ARG TIC80_VERSION=8bbaba17571e4b494ed60be38a9e733e92d24ac3
+# TIC80_VERSION is a commit SHA on main, not the v1.2.0 tag, because it needs a fix that
+# landed after v1.2.0 and hasn't been cut into a tag yet: nesbox/TIC-80#3018 (merged
+# 2026-09-23) fixes the browser console's `add` command, which calls the now-unsupported
+# Emscripten runtime helper `writeArrayToMemory` - newer Emscripten no longer includes it
+# by default, so `add` throws a ReferenceError and never completes. The pinned commit
+# (merged 2026-09-29) is a descendant of that fix. Move this back to a tag once upstream
+# cuts a release that includes it; the TIC-80 host (dev.tic80.com vs tic80.com) then
+# follows automatically (see the config.js step below).
+ARG TIC80_VERSION=4dba5bc2640d9cde650fb0b427c9be6aab598de9
 ARG EMSDK_VERSION=6.0.10
 ARG WEBDAV_IMAGE=hacdias/webdav:v5.16.0
 ARG BASEIMAGE_ALPINE_TAG=3.21-6689918e-ls38
@@ -102,7 +103,11 @@ COPY --from=tic80-builder /src/build/cloudytic80-config.js /app/www/config.js
 #  2. SILENT: the shim's own assumptions about TIC-80 change - Module.FS still being
 #     exported (the -sEXPORTED_RUNTIME_METHODS=FS flag above), FS.mount / FS.syncfs still
 #     being how the cart folder is mounted and persisted (see the header of
-#     web/webdav-shim.js). A page-level patch can't see any of that.
+#     web/webdav-shim.js). A page-level patch can't see any of that. The shim also sets
+#     Module.touchControlsEnabled = false on devices whose primary pointer isn't touch
+#     (limitTouchControls), because upstream shows its touch overlay on any machine with
+#     a touchscreen. If upstream renames that flag, the overlay silently comes back on
+#     touchscreen laptops and desktops (cosmetic only).
 #  3. SILENT: TIC-80 starts requesting new paths from "its own site". The shim only
 #     redirects /json, /cart/, /export/ and /js/ (UPSTREAM_PATHS in webdav-shim.js) to
 #     the build's tic80.com site; any other relative path lands on this server and 404s.
