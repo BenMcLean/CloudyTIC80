@@ -1,0 +1,14 @@
+#!/bin/bash
+# Docker HEALTHCHECK: healthy only if both services in the container are up
+# and answering, not just nginx. Prints the reason to stderr when not.
+fail() { echo "unhealthy: $*" >&2; exit 1; }
+
+# The favicon is served without a login.
+curl -fsS -o /dev/null --max-time 4 http://127.0.0.1/favicon.ico \
+    || fail "nginx is not answering on :80"
+
+# webdav listens on loopback only, and denies everything without a login. Any
+# HTTP status at all (a 401 is expected) proves it is up and serving.
+code=$(curl -s -o /dev/null --max-time 4 -w '%{http_code}' http://127.0.0.1:6065/)
+[ "$code" != "000" ] || fail "webdav is not answering on :6065"
+exit 0

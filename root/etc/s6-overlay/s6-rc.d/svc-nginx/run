@@ -2,5 +2,17 @@
 # nginx master runs as root (needed to open /dev/stdout/stderr and bind port 80);
 # workers drop to abc via nginx.conf's `user abc;` directive.
 mkdir -p /run/nginx /var/lib/nginx/tmp
-chown -R abc:abc /var/lib/nginx/tmp
+# The workers run as abc, so abc must own the whole path: /var/lib/nginx itself is
+# nginx:nginx 750 in the package, which stops the workers reaching tmp/ below it
+# and makes every upload too big for the in-memory buffer (a bigger cart, a web
+# export) fail with HTTP 500.
+chown -R abc:abc /var/lib/nginx
+# LOG_LEVEL=verbose logs every web request; the default only logs failures
+# (4xx/5xx), since successful requests would drown out everything else.
+# nginx can't read env vars in its config, so write the filter it includes.
+if [ "${LOG_LEVEL:-normal}" = "verbose" ]; then
+    printf 'map $status $loggable { default 1; }\n' > /run/log-filter.conf
+else
+    printf 'map $status $loggable { ~^[23] 0; default 1; }\n' > /run/log-filter.conf
+fi
 exec nginx -g "daemon off;"

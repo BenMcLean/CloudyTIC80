@@ -32,6 +32,13 @@ redirects them to a WebDAV server over HTTP.
 - **The whole site is gated behind Basic Auth**, except `/favicon.ico` — deliberately,
   so nobody can start a project unauthenticated and only discover later that it was
   never being saved.
+- **The page is TIC-80's own** (`build/html/index.html`: click-to-play screen, touch
+  controls, layout), taken from the same build as the engine, with exactly three
+  insertions made at image build time: `config.js` and `webdav-shim.js` before the
+  script block that defines `Module`, and a one-line script after it that installs the
+  shim. The block is found by what it defines, not by its formatting, so it follows
+  upstream whenever `TIC80_VERSION` moves. If that block ever disappears the build
+  fails, rather than shipping a page that doesn't save.
 - **`web/webdav-shim.js`** is loaded before TIC-80's own compiled code runs. It wraps
   `Module.FS.mount` (to learn TIC-80's cart-storage mount path) and `Module.FS.syncfs`
   (TIC-80's own persistence trigger — called once at startup to populate, and again
@@ -77,6 +84,8 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=Etc/UTC
+      # "normal" logs only failed web requests; "verbose" logs all of them.
+      - LOG_LEVEL=normal
     ports:
       # "host:container" - only change the host side (left of the colon)
       # Leave ":80" (right of the colon) exactly as shown.
@@ -85,7 +94,35 @@ services:
       # "host:container" - only change the host side (left of the colon)
       # Leave ":/config" (right of the colon) exactly as shown.
       - ./config:/config
+    # Docker keeps container logs forever by default. This caps them at
+    # about 30 MB (3 files of 10 MB), oldest dropped first.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 ```
+
+Logs go to the container's output (`docker compose logs -f`), never to files.
+The `logging:` block above caps them at about 30 MB. If you use `docker run`
+instead, add `--log-opt max-size=10m --log-opt max-file=3`. Only failed web
+requests are logged unless you set `LOG_LEVEL=verbose`.
+
+**Login guessing is throttled.** Failed logins are limited to 10 a minute per
+client address (then HTTP 429). A correct login still works while an address is
+throttled. Behind a reverse proxy all users share the proxy's address unless you
+set up nginx's `real_ip` module, so the limit is then shared between them. The
+container also has a Docker health check that confirms both nginx and webdav are
+answering.
+
+**tic80.com traffic doesn't go through your server.** TIC-80's online features
+(SURF's cart browser, web export, the version check) are requested straight from
+each player's browser to TIC-80's own site. Which site is decided by the TIC-80
+build in the image (a dev snapshot uses dev.tic80.com, a release uses tic80.com)
+and is read from the build automatically, so there is nothing to configure. Your
+server only handles the page and the `/dav/` storage. TIC-80 itself has no way to
+upload a cart to the community site, so saving while inside that folder just fails
+with "cart saving error".
 
 That's it — no clone, no build. On first start, a default `config/webdav-config.yml`
 is seeded automatically with no users configured. With no users, nginx and webdav both
@@ -120,6 +157,7 @@ docker run -d \
   -e PGID=1000 \
   -p 8080:80 \
   -v "$(pwd)/config:/config" \
+  --log-opt max-size=10m --log-opt max-file=3 \
   cloudytic80
 ```
 
@@ -255,7 +293,6 @@ docker build --build-arg TIC80_VERSION=<some-other-revision> -t cloudytic80 .
 CloudyTIC80/
 ├── Dockerfile                # multi-stage: tic80-builder → webdav-extract → final
 ├── web/
-│   ├── index.html            # our own shell (not TIC-80's own build/html/index.html)
 │   └── webdav-shim.js        # FS.mount/FS.syncfs interception + WebDAV sync
 └── root/                     # copied to image root
     ├── defaults/webdav-config.yml   # seeded to /config on first run

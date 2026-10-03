@@ -243,7 +243,51 @@ var CloudyTIC80Shim = (function () {
     return /^\/\.local(\/|$)/.test(relDir);
   }
 
+  // TIC-80's compiled network code (surf, web export, ...) requests these paths
+  // relative to wherever the page is served from, which only works on tic80.com
+  // itself. Redirect them there directly from the browser, so none of that traffic
+  // passes through this server. tic80.com allows cross-origin requests. Which site
+  // depends on the TIC-80 build (a dev snapshot uses dev.tic80.com, a release uses
+  // tic80.com): the Dockerfile reads it from the build and writes it to config.js.
+  var UPSTREAM = window.CloudyTIC80Config && window.CloudyTIC80Config.upstream;
+  var UPSTREAM_PATHS = /^\/(json|cart\/|export\/|js\/)/;
+
+  function upstreamUrl(url) {
+    try {
+      var u = new URL(String(url), location.href);
+      if (u.origin === location.origin && UPSTREAM_PATHS.test(u.pathname)) {
+        return UPSTREAM + u.pathname + u.search;
+      }
+    } catch (e) { /* not a URL we understand - leave it alone */ }
+    return null;
+  }
+
+  function redirectUpstream() {
+    if (!UPSTREAM) {
+      console.error('CloudyTIC80: config.js did not set the TIC-80 site; SURF and web export will not work');
+      return;
+    }
+    var realOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (method, url) {
+      var rewritten = upstreamUrl(url);
+      if (rewritten) arguments[1] = rewritten;
+      return realOpen.apply(this, arguments);
+    };
+
+    var realFetch = window.fetch;
+    if (realFetch) {
+      window.fetch = function (input, init) {
+        var rewritten = upstreamUrl(typeof input === 'string' || input instanceof URL ? input : input.url);
+        if (rewritten) {
+          input = typeof input === 'string' || input instanceof URL ? rewritten : new Request(rewritten, input);
+        }
+        return realFetch.call(window, input, init);
+      };
+    }
+  }
+
   function install(Module) {
+    redirectUpstream();
     Module.preRun = Module.preRun || [];
     Module.preRun.push(function () {
       var FS = Module.FS;
