@@ -312,3 +312,9 @@ handling.
 # Other Projects
 - [CloudyDoom](https://github.com/BenMcLean/CloudyDoom): Multiplayer Doom, playable straight in the browser, pointed at your own dedicated server.
 - [CloudyQuake](https://github.com/BenMcLean/CloudyQuake): Multiplayer Quake, playable straight in the browser, pointed at your own dedicated server.
+
+## Tests
+
+`tests/` holds real-browser end-to-end tests (see `tests/README.md`): among other things, that a
+cart saved in TIC-80's console really lands on the server, only for its owner. CI builds the
+image once, runs them against it, and publishes only if they pass.

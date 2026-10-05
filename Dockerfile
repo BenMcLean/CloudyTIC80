@@ -1,16 +1,14 @@
 # syntax=docker/dockerfile:1
 
-# Pinned upstream versions. Bump these deliberately, never track a floating branch/tag.
+# Pinned upstream versions. Bump these deliberately, never track a floating branch.
 #
-# TIC80_VERSION is a commit SHA on main, not the v1.2.0 tag, because it needs a fix that
-# landed after v1.2.0 and hasn't been cut into a tag yet: nesbox/TIC-80#3018 (merged
-# 2026-09-23) fixes the browser console's `add` command, which calls the now-unsupported
-# Emscripten runtime helper `writeArrayToMemory` - newer Emscripten no longer includes it
-# by default, so `add` throws a ReferenceError and never completes. The pinned commit
-# (merged 2026-09-29) is a descendant of that fix. Move this back to a tag once upstream
-# cuts a release that includes it; the TIC-80 host (dev.tic80.com vs tic80.com) then
-# follows automatically (see the config.js step below).
-ARG TIC80_VERSION=4dba5bc2640d9cde650fb0b427c9be6aab598de9
+# TIC80_VERSION is anything `git fetch` accepts: a release tag, a commit SHA, or a branch (a
+# branch is only as pinned as the day it was built, so prefer a tag or SHA). Whether the build
+# counts as a RELEASE (talks to tic80.com) or a dev snapshot (dev.tic80.com) is not chosen here:
+# TIC-80 decides it by running `git describe --exact-match` on HEAD (cmake/version.cmake), and
+# the checkout step below makes that come out right for every kind of value - a commit that a
+# release tag points at is a release, any other commit is a snapshot, as upstream would build it.
+ARG TIC80_VERSION=v1.3.1
 ARG EMSDK_VERSION=6.0.10
 ARG WEBDAV_IMAGE=hacdias/webdav:v5.16.0
 ARG BASEIMAGE_ALPINE_TAG=3.21-6689918e-ls38
@@ -38,20 +36,41 @@ WORKDIR /src
 RUN git init && \
     git remote add origin https://github.com/nesbox/TIC-80.git && \
     git fetch --depth 1 origin ${TIC80_VERSION} && \
-    git checkout FETCH_HEAD && \
+    git checkout --detach FETCH_HEAD && \
+    head="$(git rev-parse HEAD)" && \
+    git ls-remote --tags origin | \
+        awk -v head="$head" '$1 == head && $2 ~ /^refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+(\^\{\})?$/ { t = $2; sub(/^refs\/tags\//, "", t); sub(/\^.*/, "", t); print t }' | \
+        sort -u | while read -r tag; do git tag "$tag" HEAD; done && \
+    echo "TIC-80 ${TIC80_VERSION} = commit $head; release tag: $(git describe --tags --exact-match HEAD 2>/dev/null || echo 'none (dev snapshot)')" && \
     git submodule update --init --recursive --depth 1
 
-# Mirrors the "html" job of TIC-80's own .github/workflows/build.yml.
+# Mirrors the "Build per-language players" step of the "html" job of TIC-80's own
+# .github/workflows/build.yml (the site's player: sokol system layer, touch controls,
+# editors), with every language on instead of one.
 RUN mkdir -p build && cd build && \
     emcmake cmake -G Ninja \
-        -DBUILD_SDLGPU=On \
+        -DBUILD_SDL=OFF \
+        -DBUILD_SOKOL=ON \
+        -DBUILD_TOUCH_INPUT=ON \
+        -DBUILD_EDITORS=ON \
         -DBUILD_STATIC=ON \
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_WITH_ALL=ON \
         -DBUILD_PRO=On \
-        -DCMAKE_EXE_LINKER_FLAGS="-sEXPORTED_RUNTIME_METHODS=FS" \
         .. && \
     cmake --build . --parallel
+
+# The shim needs Module.FS, which Emscripten only exports on request. TIC-80's web target sets
+# its own -sEXPORTED_RUNTIME_METHODS=UTF8ToString at link time, and the last such setting wins,
+# so asking through CMAKE_EXE_LINKER_FLAGS (which comes first) silently lost: the page threw in
+# the shim and the engine never started. EMCC_CFLAGS is applied after everything on the command
+# line, so it wins; it has to repeat what TIC-80 asks for (UTF8ToString) because it replaces
+# rather than adds to it. Relink only, then verify, since a flag that stopped taking effect looks
+# exactly like one that took.
+RUN cd build && rm -f bin/tic80.js bin/tic80.wasm && \
+    EMCC_CFLAGS="-sEXPORTED_RUNTIME_METHODS=FS,UTF8ToString" cmake --build . --parallel && \
+    grep -q 'Module\["FS"\]' bin/tic80.js && grep -q 'Module\["UTF8ToString"\]' bin/tic80.js \
+    || { echo "tic80.js does not export both FS and UTF8ToString" >&2; exit 1; }
 
 # Which tic80.com site this build talks to. TIC-80 compiles that in (system.h: a release
 # uses tic80.com, a dev snapshot dev.tic80.com), so it is read from the build itself
@@ -103,11 +122,7 @@ COPY --from=tic80-builder /src/build/cloudytic80-config.js /app/www/config.js
 #  2. SILENT: the shim's own assumptions about TIC-80 change - Module.FS still being
 #     exported (the -sEXPORTED_RUNTIME_METHODS=FS flag above), FS.mount / FS.syncfs still
 #     being how the cart folder is mounted and persisted (see the header of
-#     web/webdav-shim.js). A page-level patch can't see any of that. The shim also sets
-#     Module.touchControlsEnabled = false on devices whose primary pointer isn't touch
-#     (limitTouchControls), because upstream shows its touch overlay on any machine with
-#     a touchscreen. If upstream renames that flag, the overlay silently comes back on
-#     touchscreen laptops and desktops (cosmetic only).
+#     web/webdav-shim.js). A page-level patch can't see any of that.
 #  3. SILENT: TIC-80 starts requesting new paths from "its own site". The shim only
 #     redirects /json, /cart/, /export/ and /js/ (UPSTREAM_PATHS in webdav-shim.js) to
 #     the build's tic80.com site; any other relative path lands on this server and 404s.

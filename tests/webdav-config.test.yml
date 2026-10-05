@@ -1,0 +1,16 @@
+# Throwaway accounts for the end-to-end tests. Never use these anywhere real.
+address: 127.0.0.1
+port: 6065
+directory: /config/data
+permissions: none
+cors:
+  enabled: false
+users:
+  - username: alice
+    password: alicepw
+    directory: /config/data/alice
+    permissions: CRUD
+  - username: bob
+    password: bobpw
+    directory: /config/data/bob
+    permissions: CRUD

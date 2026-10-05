@@ -1,0 +1,11 @@
+{
+  "name": "cloudytic80-tests",
+  "private": true,
+  "description": "End-to-end tests: run against a live CloudyTIC80 container, in a real browser.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.1"
+  }
+}

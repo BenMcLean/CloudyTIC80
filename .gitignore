@@ -1,3 +1,6 @@
 # Runtime data mounted into the container at /config - contains plaintext credentials
 # (webdav-config.yml) and the htpasswd file generated from them. Never commit this.
 /config/
+
+tests/node_modules/
+tests/test-results/

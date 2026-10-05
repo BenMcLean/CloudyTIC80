@@ -3,7 +3,7 @@
 // itself. Hooks FS.mount (to learn TIC-80's cart-storage mount path) and FS.syncfs
 // (TIC-80's own persistence trigger) before TIC-80's main() runs.
 //
-// TIC-80's own syncfs callbacks (src/system/sdl/main.c) discard the `err` argument
+// TIC-80's own syncfs callbacks (src/system/sokol/main.c) discard the `err` argument
 // entirely, so a failed save/load never reaches the user through TIC-80 itself. This
 // shim therefore has to surface failures on its own: it never silently marks a failed
 // write as synced (so it's retried on the next sync instead of being lost), and it
@@ -286,18 +286,7 @@ var CloudyTIC80Shim = (function () {
     }
   }
 
-  // TIC-80's page shows its on-screen touch controls whenever the browser reports any
-  // touch capability (navigator.maxTouchPoints > 0), which also covers desktops and
-  // laptops that merely have a touchscreen. Keep them only where the primary pointer is
-  // actually touch (phones, tablets). This can only turn the controls off, never on.
-  function limitTouchControls(Module) {
-    if (window.matchMedia && !window.matchMedia('(pointer: coarse)').matches) {
-      Module.touchControlsEnabled = false;
-    }
-  }
-
   function install(Module) {
-    limitTouchControls(Module);
     redirectUpstream();
     Module.preRun = Module.preRun || [];
     Module.preRun.push(function () {
