@@ -4,7 +4,7 @@ const { defineConfig } = require('@playwright/test');
 module.exports = defineConfig({
   testDir: '.',
   testMatch: '*.spec.js',
-  timeout: 90_000,
+  timeout: 180_000,   // a slow runner boots the engine twice in the save test
   workers: 1,          // one container, one shared set of test accounts
   retries: 0,          // a flaky release gate is a broken release gate
   reporter: [['list']],

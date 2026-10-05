@@ -22,9 +22,25 @@ async function startPlayer(browser, user) {
   const context = await browser.newContext({ httpCredentials: { ...user, send: 'always' }, viewport: { width: 960, height: 640 } });
   const page = await context.newPage();
   const errors = [];
-  page.on('pageerror', (e) => errors.push(String(e)));
+  const log = [];
+  page.on('pageerror', (e) => { errors.push(String(e)); log.push('pageerror: ' + e); });
+  page.on('console', (m) => log.push(m.type() + ': ' + m.text()));
+  page.on('requestfailed', (r) => log.push('requestfailed: ' + r.method() + ' ' + r.url()));
+  // The player only starts its animation loop once the engine is up and the carts are loaded,
+  // so counting frames is a real "the console is running" signal, unlike a fixed sleep (which
+  // is how a slow first boot on a CI runner typed the command into a console that wasn't there).
+  await page.addInitScript(() => {
+    window.__frames = 0;
+    const raf = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (cb) => raf((t) => { window.__frames++; cb(t); });
+  });
+  // THROTTLE=<n> slows the page's CPU n-fold, to reproduce a slow CI runner locally.
+  if (process.env.THROTTLE) {
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.THROTTLE) });
+  }
   await page.goto('/');
-  return { context, page, errors };
+  return { context, page, errors, log };
 }
 
 // Clicks CLICK TO PLAY and waits for TIC-80's console to be up.
@@ -32,8 +48,18 @@ async function boot(page) {
   await page.locator('#game-frame').click();
   // Module.FS is only exported when the build's link flags took; the shim depends on it.
   await page.waitForFunction(() => window.Module && window.Module.FS, null, { timeout: 60_000 });
-  await page.waitForTimeout(5000); // cart folder populated from the server, first console frames
+  await page.waitForFunction(() => window.__frames > 90, null, { timeout: 90_000 });
   await page.locator('#canvas').focus();
+  // The console ignores keys for a moment after it starts (a command typed into that window
+  // loses its first characters). It echoes every line it accepts to the browser console as
+  // ">text", so press Enter until an empty prompt is echoed back: from then on it takes input.
+  let prompts = 0;
+  page.on('console', (m) => { if (/^>/.test(m.text())) prompts++; });
+  await expect.poll(async () => {
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(400);
+    return prompts;
+  }, { timeout: 60_000, message: 'the console never accepted input' }).toBeGreaterThan(0);
 }
 
 async function typeCommand(page, text) {
@@ -90,7 +116,7 @@ test.describe('the page', () => {
 test.describe('saving to the server', () => {
   test('a cart saved in the TIC-80 console lands on the server, and only for its owner', async ({ browser, baseURL }) => {
     const name = 'e2e' + Date.now().toString(36);
-    const { context, page, errors } = await startPlayer(browser, ALICE);
+    const { context, page, errors, log } = await startPlayer(browser, ALICE);
     const puts = [];
     page.on('request', (r) => { if (r.method() === 'PUT') puts.push(new URL(r.url()).pathname); });
 
@@ -98,10 +124,13 @@ test.describe('saving to the server', () => {
     await typeCommand(page, 'save ' + name);
 
     // The browser sent it...
-    await expect.poll(() => puts.some((p) => p.includes(name)), {
-      timeout: 30_000,
-      message: 'no PUT /dav/' + name + '* seen',
-    }).toBe(true);
+    try {
+      await expect.poll(() => puts.some((p) => p.includes(name)), { timeout: 30_000 }).toBe(true);
+    } catch (e) {
+      const frames = await page.evaluate(() => window.__frames).catch(() => '?');
+      throw new Error('no PUT /dav/' + name + '* seen (frames rendered: ' + frames + ', PUTs: ' +
+        JSON.stringify(puts) + ')\nPAGE LOG:\n' + log.slice(-40).join('\n'));
+    }
 
     // ...and, checked from outside the browser, the server really has it, as a real cart.
     const alice = await api(baseURL, ALICE);
