@@ -150,14 +150,17 @@ test.describe('saving to the server', () => {
     await expect(page.getByText(/Could not (save|load)/)).toHaveCount(0);
     expect(errors).toEqual([]);
 
-    // Survives a reload: the cart is pulled back down from the server into a fresh browser
-    // profile (no local IndexedDB cache to fall back on).
+    // Survives a reload: a fresh browser profile (no local IndexedDB cache to fall back on) lists
+    // the cart and reads it back, straight from the server.
     await context.close();
     const second = await startPlayer(browser, ALICE);
-    const gets = [];
-    second.page.on('request', (r) => { if (r.method() === 'GET') gets.push(new URL(r.url()).pathname); });
     await boot(second.page);
-    await expect.poll(() => gets.includes('/dav/' + name + '.tic'), { timeout: 30_000 }).toBe(true);
+    const listed = await second.page.evaluate(() =>
+      window.Module.FS.readdir(CloudyTIC80Shim.mountDir()).filter((n) => n !== '.' && n !== '..'));
+    expect(listed).toContain(name + '.tic');
+    const size = await second.page.evaluate((n) =>
+      window.Module.FS.readFile(CloudyTIC80Shim.mountDir() + '/' + n).length, name + '.tic');
+    expect(size).toBeGreaterThan(100);
     await second.context.close();
 
     await alice.delete('/dav/' + name + '.tic');
@@ -171,6 +174,145 @@ test.describe('saving to the server', () => {
     expect((await listDav(bob)).body).not.toContain('isolation-probe');
     expect((await bob.get('/dav/isolation-probe.tic')).status()).toBe(404);
     await alice.delete('/dav/isolation-probe.tic');
+  });
+});
+
+test.describe('server and browser stay in step', () => {
+  const ls = (page) => page.evaluate(() => {
+    const FS = window.Module.FS;
+    return FS.readdir(CloudyTIC80Shim.mountDir()).filter((n) => n !== '.' && n !== '..');
+  });
+
+  test('a cart inserted on the server shows up in a running session, and a deleted one goes', async ({ browser, baseURL }) => {
+    const name = 'ins' + Date.now().toString(36) + '.tic';
+    const alice = await api(baseURL, ALICE);
+    const { context, page } = await startPlayer(browser, ALICE);
+    await boot(page);
+    expect(await ls(page)).not.toContain(name);
+
+    expect((await alice.put('/dav/' + name, { data: Buffer.from('from the teacher') })).status()).toBeLessThan(300);
+    expect(await ls(page)).toContain(name);
+    expect(await page.evaluate((n) => {
+      const FS = window.Module.FS;
+      return new TextDecoder().decode(FS.readFile(CloudyTIC80Shim.mountDir() + '/' + n));
+    }, name)).toBe('from the teacher');
+
+    await alice.delete('/dav/' + name);
+    expect(await ls(page)).not.toContain(name);
+    await context.close();
+  });
+
+  test('a save the server refuses fails: nothing is written, and the page says so', async ({ browser, baseURL }) => {
+    const name = 'fail' + Date.now().toString(36);
+    const { context, page } = await startPlayer(browser, ALICE);
+    await boot(page);
+    await page.route('**/dav/**', (route) =>
+      route.request().method() === 'PUT' || route.request().method() === 'PROPFIND'
+        ? route.fulfill({ status: 503, body: 'down' })
+        : route.continue());
+    await typeCommand(page, 'save ' + name);
+    await expect(page.getByText(/NOT SAVED/)).toBeVisible({ timeout: 15_000 });
+    await page.unroute('**/dav/**');
+    expect(await ls(page)).not.toContain(name + '.tic');
+    const alice = await api(baseURL, ALICE);
+    expect((await alice.get('/dav/' + name + '.tic')).status()).toBe(404);
+    await context.close();
+  });
+
+  const read = (page, n) => page.evaluate((name) => new TextDecoder().decode(
+    window.Module.FS.readFile(CloudyTIC80Shim.mountDir() + '/' + name)), n);
+
+  test('every read asks the server: a cart replaced on the server is read as replaced', async ({ browser, baseURL }) => {
+    const name = 'fresh' + Date.now().toString(36) + '.tic';
+    const alice = await api(baseURL, ALICE);
+    await alice.put('/dav/' + name, { data: Buffer.from('one') });
+    const { context, page } = await startPlayer(browser, ALICE);
+    await boot(page);
+    expect(await read(page, name)).toBe('one');
+    await alice.put('/dav/' + name, { data: Buffer.from('two') });
+    expect(await read(page, name)).toBe('two');
+    await alice.delete('/dav/' + name);
+    await expect(read(page, name)).rejects.toThrow();
+    await context.close();
+  });
+
+  test('when the server cannot be reached, reads and listings fail loudly instead of using the local copy', async ({ browser, baseURL }) => {
+    const name = 'down' + Date.now().toString(36) + '.tic';
+    const alice = await api(baseURL, ALICE);
+    await alice.put('/dav/' + name, { data: Buffer.from('there') });
+    const { context, page } = await startPlayer(browser, ALICE);
+    await boot(page);
+    expect(await read(page, name)).toBe('there');
+    await page.route('**/dav/**', (route) => route.fulfill({ status: 503, body: 'down' }));
+    await expect(read(page, name)).rejects.toThrow();
+    await expect(ls(page)).rejects.toThrow();
+    await expect(page.getByText(/COULD NOT READ FROM THE SERVER/)).toBeVisible();
+    await page.unroute('**/dav/**');
+    expect(await ls(page)).toContain(name);
+    await expect(page.getByText(/COULD NOT READ FROM THE SERVER/)).toBeHidden();
+    await context.close();
+    await alice.delete('/dav/' + name);
+  });
+});
+
+test.describe('option defaults', () => {
+  test('crt is off by default, and the editor is forced to tabs, 4 wide', async ({ browser }) => {
+    const { context, page } = await startPlayer(browser, ALICE);
+    await boot(page);
+    const options = await page.evaluate(() => {
+      const path = CloudyTIC80Shim.mountDir() + '/' + window.CloudyTIC80Config.optionsPath;
+      return JSON.parse(window.Module.FS.readFile(path, { encoding: 'utf8' }));
+    });
+    expect(options.crt).toBe(false);
+    expect(options.tabMode).toBe(1);
+    expect(options.tabSize).toBe(4);
+    await context.close();
+  });
+
+  const optionsOf = (page) => page.evaluate(() => {
+    const path = CloudyTIC80Shim.mountDir() + '/' + window.CloudyTIC80Config.optionsPath;
+    return JSON.parse(window.Module.FS.readFile(path, { encoding: 'utf8' }));
+  });
+
+  test("the owner's tic80-options.json is served to logged-in users only, seeded with the defaults", async ({ baseURL }) => {
+    const anon = await request.newContext({ baseURL });
+    expect((await anon.get('/tic80-options.json')).status()).toBe(401);
+    const alice = await api(baseURL, ALICE);
+    const res = await alice.get('/tic80-options.json');
+    expect(res.status()).toBe(200);
+    expect(res.headers()['cache-control']).toContain('no-store');
+    expect(await res.json()).toEqual({ defaults: { crt: false }, forced: { tabMode: 1, tabSize: 4 } });
+  });
+
+  test("the owner's file replaces the built-in values key by key", async ({ browser }) => {
+    const { context, page } = await startPlayer(browser, ALICE);
+    await page.route('**/tic80-options.json', (route) => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ defaults: { crt: true, volume: 7 }, forced: { tabSize: 2 } }),
+    }));
+    await boot(page);
+    const options = await optionsOf(page);
+    expect(options.crt).toBe(true);
+    expect(options.volume).toBe(7);
+    expect(options.tabSize).toBe(2);
+    expect(options.tabMode).toBe(1);   // not mentioned by the owner: the built-in value stays
+    await context.close();
+  });
+
+  test('no file means the built-in values; a broken file is reported, not ignored', async ({ browser }) => {
+    const none = await startPlayer(browser, ALICE);
+    await none.page.route('**/tic80-options.json', (route) => route.fulfill({ status: 404, body: '' }));
+    await boot(none.page);
+    expect((await optionsOf(none.page)).tabSize).toBe(4);
+    await expect(none.page.getByText(/tic80-options\.json/)).toHaveCount(0);
+    await none.context.close();
+
+    const broken = await startPlayer(browser, ALICE);
+    await broken.page.route('**/tic80-options.json', (route) => route.fulfill({ status: 200, body: '{ not json' }));
+    await boot(broken.page);
+    expect((await optionsOf(broken.page)).tabSize).toBe(4);
+    await expect(broken.page.getByText(/tic80-options\.json is not usable/)).toBeVisible();
+    await broken.context.close();
   });
 });
 

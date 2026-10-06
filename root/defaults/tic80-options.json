@@ -1,0 +1,4 @@
+{
+  "defaults": { "crt": false },
+  "forced": { "tabMode": 1, "tabSize": 4 }
+}

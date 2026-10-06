@@ -5,6 +5,10 @@ if [[ ! -f /config/webdav-config.yml ]]; then
     cp /defaults/webdav-config.yml /config/webdav-config.yml
 fi
 
+if [[ ! -f /config/tic80-options.json ]]; then
+    cp /defaults/tic80-options.json /config/tic80-options.json
+fi
+
 mkdir -p /config/data
 
 python3 - <<'PYEOF'

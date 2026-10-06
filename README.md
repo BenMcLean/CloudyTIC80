@@ -39,14 +39,45 @@ redirects them to a WebDAV server over HTTP.
   shim. The block is found by what it defines, not by its formatting, so it follows
   upstream whenever `TIC80_VERSION` moves. If that block ever disappears the build
   fails, rather than shipping a page that doesn't save.
-- **`web/webdav-shim.js`** is loaded before TIC-80's own compiled code runs. It wraps
-  `Module.FS.mount` (to learn TIC-80's cart-storage mount path) and `Module.FS.syncfs`
-  (TIC-80's own persistence trigger — called once at startup to populate, and again
-  after every save/delete). On populate, it `PROPFIND`/`GET`s the user's existing carts
-  from `/dav/` into the virtual filesystem. On every subsequent sync, it diffs the
-  filesystem and `PUT`/`MKCOL`/`DELETE`s whatever changed. Local IDBFS persistence is
-  left running too (harmless per-browser cache); the WebDAV server is the durable,
-  cross-device source of truth.
+- **`web/webdav-shim.js`** is loaded before TIC-80's own compiled code runs. It hooks
+  Emscripten's virtual filesystem (`Module.FS`), which TIC-80 uses for carts, and makes the
+  server the only source of truth: **every file operation goes to the server, every time,
+  and fails if the server can't do it.**
+  - Open for reading = `GET`; `stat`/`ls`/`dir` = `PROPFIND` (a cart dropped into a user's
+    folder appears at once, one removed disappears); delete = `DELETE`; new folder =
+    `MKCOL`; rename = `MOVE`. The in-browser filesystem is just a scratch mirror,
+    refreshed from the server on each call and never used as a fallback.
+  - Saving probes the server before the file is opened (TIC-80 reports a failed save only
+    if the open fails), then uploads the content when the file is closed and checks the
+    server holds it. If that fails, the local file is put back as it was.
+  - Any failure to talk to the server (unreachable, 5xx, login lost, ...) makes the
+    operation fail with an I/O error and shows a red banner (`NOT SAVED...` /
+    `COULD NOT READ FROM THE SERVER...`) that stays until an operation of that kind
+    succeeds. Plain "not found" answers (e.g. `load` of a cart that doesn't exist) are
+    reported to TIC-80 as that, without a banner. Operations that can't be done on the
+    server (truncate, links) fail rather than quietly diverging.
+  - The reserved `.local` folder (TIC-80's own settings and cache of tic80.com carts) is
+    not the user's work and stays purely in the browser.
+  - Because these are synchronous requests, a slow connection makes the console pause
+    during an operation rather than lose it.
+- **Option defaults.** TIC-80's own defaults are overridden when the page starts, from
+  `/config/tic80-options.json` (seeded on first start, next to `webdav-config.yml`; edit it
+  and reload the page, no restart needed):
+
+  ```json
+  {
+    "defaults": { "crt": false },
+    "forced":   { "tabMode": 1, "tabSize": 4 }
+  }
+  ```
+
+  `defaults` apply only until a browser has saved options of its own, so a user's later
+  choice sticks. `forced` apply on every start, so a change made in TIC-80's options menu
+  lasts one session. The keys are TIC-80's own option names: `crt`, `fullscreen`, `vsync`,
+  `integerScale`, `volume` (0-15), `autosave`, `keybindMode`, `tabMode` (0 auto, 1 tabs,
+  2 spaces) and `tabSize`. A key you leave out keeps TIC-80's own default. If the file is
+  deleted, built-in defaults (the ones above) apply; if it is not valid, the page shows a
+  banner saying so. TIC-80 keeps options per browser, not per account.
 - **hacdias/webdav** is the actual storage backend: it validates Basic Auth and scopes
   each user strictly to their own directory. This has been tested directly against
   path-traversal attempts (`../`, URL-encoded `..%2f`, encoded slashes, etc.) — nginx

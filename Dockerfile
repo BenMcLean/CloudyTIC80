@@ -76,14 +76,18 @@ RUN cd build && rm -f bin/tic80.js bin/tic80.wasm && \
 # uses tic80.com, a dev snapshot dev.tic80.com), so it is read from the build itself
 # instead of being a setting: a value that differed from the build could only be wrong.
 # The version.h rule is cross-checked against the compiled engine, and the build fails if
-# the two disagree (e.g. upstream changes how the host is chosen). The page's shim reads
-# the result from config.js.
+# the two disagree (e.g. upstream changes how the host is chosen). The same step reads where
+# TIC-80 keeps its options file (.local/<version hash>/options.json, from the same version.h)
+# and checks that against the engine too. The page's shim reads both from config.js.
 RUN release="$(sed -n 's/^#define TIC_VERSION_IS_RELEASE[[:space:]]*\([01]\).*/\1/p' build/version.h)" && \
     if [ "$release" = 1 ]; then host=tic80.com; elif [ "$release" = 0 ]; then host=dev.tic80.com; \
     else echo "cannot read TIC_VERSION_IS_RELEASE from build/version.h" >&2; exit 1; fi && \
     if grep -aq 'dev\.tic80\.com' build/bin/tic80.wasm; then built=dev.tic80.com; else built=tic80.com; fi && \
     [ "$host" = "$built" ] || { echo "version.h says $host but the compiled engine uses $built" >&2; exit 1; } && \
-    printf 'window.CloudyTIC80Config = { upstream: "https://%s" };\n' "$host" > build/cloudytic80-config.js && \
+    hash="$(sed -n 's/^#define TIC_VERSION_HASH[[:space:]]*"\([^"]*\)".*/\1/p' build/version.h)" && \
+    [ -n "$hash" ] || { echo "cannot read TIC_VERSION_HASH from build/version.h" >&2; exit 1; } && \
+    LC_ALL=C grep -aqF ".local/${hash}/options.json" build/bin/tic80.wasm || { echo "the engine does not use .local/${hash}/options.json" >&2; exit 1; } && \
+    printf 'window.CloudyTIC80Config = { upstream: "https://%s", optionsPath: ".local/%s/options.json" };\n' "$host" "$hash" > build/cloudytic80-config.js && \
     cat build/cloudytic80-config.js
 
 # ---------------------------------------------------------------------------
