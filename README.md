@@ -11,6 +11,10 @@ unmodified `tic80.js`/`tic80.wasm` build inside our own small HTML shell, plus a
 shim that hooks Emscripten's virtual filesystem calls TIC-80 already makes, and
 redirects them to a WebDAV server over HTTP.
 
+## Why this exists
+
+For a classroom setting, this provides a fast way for students to login and have their carts, plus anything the teacher decides to send them, already there. Putting a server behind TIC-80 provides the convenience to be able to work remotely from anywhere. The name is a convention following my previous projects, [CloudyDoom](https://github.com/BenMcLean/CloudyDoom) and [CloudyQuake](https://github.com/BenMcLean/CloudyQuake).
+
 ## How it works
 
 ```
