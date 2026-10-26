@@ -8,7 +8,7 @@
 # TIC-80 decides it by running `git describe --exact-match` on HEAD (cmake/version.cmake), and
 # the checkout step below makes that come out right for every kind of value - a commit that a
 # release tag points at is a release, any other commit is a snapshot, as upstream would build it.
-ARG TIC80_VERSION=v1.3.1
+ARG TIC80_VERSION=v1.4.0
 ARG EMSDK_VERSION=6.0.10
 ARG WEBDAV_IMAGE=hacdias/webdav:v5.16.0
 ARG BASEIMAGE_ALPINE_TAG=3.21-6689918e-ls38

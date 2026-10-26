@@ -6,10 +6,10 @@ redirects cart storage (`load`/`save`/`files`/`folder`) from the browser's local
 IndexedDB to per-user folders on the server, behind Basic Auth. Multiple accounts are
 supported; each user only ever sees their own carts.
 
-TIC-80 itself is never forked or patched. This works by loading the official,
-unmodified `tic80.js`/`tic80.wasm` build inside our own small HTML shell, plus a JS
-shim that hooks Emscripten's virtual filesystem calls TIC-80 already makes, and
-redirects them to a WebDAV server over HTTP.
+TIC-80 itself is never forked. This works by serving the official, unmodified
+`tic80.js`/`tic80.wasm` build and TIC-80's own web page, with three small insertions made
+to that page at image build time (see below): a JS shim that hooks Emscripten's virtual
+filesystem calls TIC-80 already makes, and redirects them to a WebDAV server over HTTP.
 
 ## Why this exists
 
@@ -77,9 +77,8 @@ For a classroom setting, this provides a fast way for students to login and have
 
   `defaults` apply only until a browser has saved options of its own, so a user's later
   choice sticks. `forced` apply on every start, so a change made in TIC-80's options menu
-  lasts one session. The keys are TIC-80's own option names: `crt`, `fullscreen`, `vsync`,
-  `integerScale`, `volume` (0-15), `autosave`, `keybindMode`, `tabMode` (0 auto, 1 tabs,
-  2 spaces) and `tabSize`. A key you leave out keeps TIC-80's own default. If the file is
+  lasts one session. The keys are TIC-80's own option names. (see upstream [`src/studio/config.c`](https://github.com/nesbox/TIC-80/blob/main/src/studio/config.c) and
+  [`src/studio/studio.h`](https://github.com/nesbox/TIC-80/blob/main/src/studio/studio.h)) A key you leave out keeps TIC-80's own default. If the file is
   deleted, built-in defaults (the ones above) apply; if it is not valid, the page shows a
   banner saying so. TIC-80 keeps options per browser, not per account.
 - **hacdias/webdav** is the actual storage backend: it validates Basic Auth and scopes
