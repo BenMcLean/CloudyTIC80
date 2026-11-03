@@ -2,16 +2,17 @@
 
 # Pinned upstream versions. Bump these deliberately, never track a floating branch.
 #
+# The image pins (emscripten/emsdk, hacdias/webdav, the linuxserver Alpine base) are literal
+# FROM lines further down, not ARGs, so Dependabot can see them and propose bumps. Only
+# TIC80_VERSION stays here: it is a git ref, not an image (see the check-tic80-release workflow).
+#
 # TIC80_VERSION is anything `git fetch` accepts: a release tag, a commit SHA, or a branch (a
 # branch is only as pinned as the day it was built, so prefer a tag or SHA). Whether the build
 # counts as a RELEASE (talks to tic80.com) or a dev snapshot (dev.tic80.com) is not chosen here:
 # TIC-80 decides it by running `git describe --exact-match` on HEAD (cmake/version.cmake), and
 # the checkout step below makes that come out right for every kind of value - a commit that a
 # release tag points at is a release, any other commit is a snapshot, as upstream would build it.
-ARG TIC80_VERSION=v1.4.0
-ARG EMSDK_VERSION=6.0.10
-ARG WEBDAV_IMAGE=hacdias/webdav:v5.16.0
-ARG BASEIMAGE_ALPINE_TAG=3.21-6689918e-ls38
+ARG TIC80_VERSION=v1.4.1
 
 # ---------------------------------------------------------------------------
 # Stage: build the official TIC-80 web/WASM player, unmodified, from source.
@@ -25,7 +26,7 @@ ARG BASEIMAGE_ALPINE_TAG=3.21-6689918e-ls38
 # own html job, which likewise only ever builds on ubuntu-latest/amd64), which
 # has no arm64 equivalent and can't be installed under arm64 emulation.
 # ---------------------------------------------------------------------------
-FROM --platform=linux/amd64 emscripten/emsdk:${EMSDK_VERSION} AS tic80-builder
+FROM --platform=linux/amd64 emscripten/emsdk:6.0.10 AS tic80-builder
 ARG TIC80_VERSION
 
 RUN apt-get update && \
@@ -93,12 +94,12 @@ RUN release="$(sed -n 's/^#define TIC_VERSION_IS_RELEASE[[:space:]]*\([01]\).*/\
 # ---------------------------------------------------------------------------
 # Stage: extract the hacdias/webdav static binary.
 # ---------------------------------------------------------------------------
-FROM ${WEBDAV_IMAGE} AS webdav-extract
+FROM hacdias/webdav:v5.16.0 AS webdav-extract
 
 # ---------------------------------------------------------------------------
 # Final image
 # ---------------------------------------------------------------------------
-FROM ghcr.io/linuxserver/baseimage-alpine:${BASEIMAGE_ALPINE_TAG}
+FROM ghcr.io/linuxserver/baseimage-alpine:3.21-6689918e-ls38
 
 RUN apk add --no-cache nginx openssl python3 py3-yaml
 

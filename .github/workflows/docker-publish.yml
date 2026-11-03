@@ -12,7 +12,9 @@ env:
 # One job, so one build: the image is built once, the tests run against that very image, and
 # the publish step at the end only runs if they passed. (The publish step's build is
 # the same Dockerfile against the same layer cache, so the expensive TIC-80 compile is not
-# repeated - only the arm64 final stage is new, and only on tags.) The tests run on amd64
+# repeated - only the arm64 final stage is new.) Pushes to master and pull requests only
+# build and test; NOTHING is published except from a v* tag, and a tag always publishes
+# both linux/amd64 and linux/arm64. The tests run on amd64
 # only: they check the site's behaviour, and the TIC-80 WASM is the same bytes on every
 # architecture (the Dockerfile builds it on amd64 regardless of target).
 jobs:
@@ -34,8 +36,8 @@ jobs:
         env:
           REGISTRY: ${{ env.REGISTRY }}
 
-      # Only needed to cross-build linux/arm64 on the amd64 runner; skipped when
-      # we're only building amd64 (a plain push to master), since it's not free.
+      # Only needed to cross-build linux/arm64 on the amd64 runner; skipped on runs that
+      # don't publish (master pushes, pull requests), since it's not free.
       - name: Set up QEMU
         if: github.ref_type == 'tag'
         uses: docker/setup-qemu-action@v3
@@ -98,38 +100,29 @@ jobs:
       # --- publish: only reached if every step above succeeded ---------------------------
 
       - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
+        if: github.ref_type == 'tag'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Determine build platforms
-        id: platforms
-        run: |
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            echo "platforms=linux/amd64,linux/arm64" >> "$GITHUB_OUTPUT"
-          else
-            echo "platforms=linux/amd64" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Extract image metadata
-        if: github.event_name != 'pull_request'
+        if: github.ref_type == 'tag'
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ steps.image.outputs.name }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest
             type=ref,event=tag
 
       - name: Publish (same build, from cache)
-        if: github.event_name != 'pull_request'
+        if: github.ref_type == 'tag'
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: ${{ steps.platforms.outputs.platforms }}
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

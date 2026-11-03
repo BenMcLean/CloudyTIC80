@@ -104,8 +104,8 @@ For a classroom setting, this provides a fast way for students to login and have
 
 ## Quick start
 
-A prebuilt image is published to GHCR on every push to `master` (`linux/amd64` only)
-and on every release tag (both `linux/amd64` and `linux/arm64`).
+A prebuilt image is published to GHCR only when a `v*` release tag is pushed, for both
+`linux/amd64` and `linux/arm64`. Pushes to `master` and pull requests build and test but publish nothing.
 Paste this into a `docker-compose.yml` and run `docker compose up -d`:
 
 ```yaml
@@ -306,16 +306,12 @@ configuration (users, passwords, per-user folders) lives in
 |---|---|
 | `80` | HTTP. The only exposed port — webdav listens on `127.0.0.1:6065` internally and is never reachable directly, only through nginx's `/dav/` proxy. |
 
-## Build arguments (pinned versions)
+## Pinned versions
 
-| Build arg | What it pins |
-|---|---|
-| `TIC80_VERSION` | The TIC-80 revision to build. |
-| `EMSDK_VERSION` | The Emscripten SDK version used to compile TIC-80 to WASM. |
-| `WEBDAV_IMAGE` | The WebDAV server image its binary is extracted from. |
-| `BASEIMAGE_ALPINE_TAG` | The linuxserver.io Alpine base image tag. |
-
-Any of these can be overridden at build time, e.g.:
+The TIC-80 revision to build is the `TIC80_VERSION` build arg in the Dockerfile. The Emscripten
+SDK, the WebDAV server image and the linuxserver.io Alpine base image are pinned in the
+Dockerfile's `FROM` lines instead, so Dependabot can propose updates to them. To build a
+different TIC-80 revision:
 
 ```bash
 docker build --build-arg TIC80_VERSION=<some-other-revision> -t cloudytic80 .
@@ -343,12 +339,12 @@ execline, not bash — each `up` file here is a one-line execline shim
 under `scripts/`, which is invoked as its own process and so gets normal shebang
 handling.
 
-# Other Projects
-- [CloudyDoom](https://github.com/BenMcLean/CloudyDoom): Multiplayer Doom, playable straight in the browser, pointed at your own dedicated server.
-- [CloudyQuake](https://github.com/BenMcLean/CloudyQuake): Multiplayer Quake, playable straight in the browser, pointed at your own dedicated server.
-
 ## Tests
 
 `tests/` holds real-browser end-to-end tests (see `tests/README.md`): among other things, that a
 cart saved in TIC-80's console really lands on the server, only for its owner. CI builds the
 image once, runs them against it, and publishes only if they pass.
+
+# Other Projects
+- [CloudyDoom](https://github.com/BenMcLean/CloudyDoom): Multiplayer Doom, playable straight in the browser, pointed at your own dedicated server.
+- [CloudyQuake](https://github.com/BenMcLean/CloudyQuake): Multiplayer Quake, playable straight in the browser, pointed at your own dedicated server.
