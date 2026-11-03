@@ -94,7 +94,7 @@ RUN release="$(sed -n 's/^#define TIC_VERSION_IS_RELEASE[[:space:]]*\([01]\).*/\
 # ---------------------------------------------------------------------------
 # Stage: extract the hacdias/webdav static binary.
 # ---------------------------------------------------------------------------
-FROM hacdias/webdav:v5.16.0 AS webdav-extract
+FROM hacdias/webdav:v5.17.3 AS webdav-extract
 
 # ---------------------------------------------------------------------------
 # Final image
