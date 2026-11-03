@@ -110,7 +110,7 @@ jobs:
       - name: Extract image metadata
         if: github.ref_type == 'tag'
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ steps.image.outputs.name }}
           tags: |
