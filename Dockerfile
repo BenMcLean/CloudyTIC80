@@ -26,7 +26,7 @@ ARG TIC80_VERSION=v1.4.1
 # own html job, which likewise only ever builds on ubuntu-latest/amd64), which
 # has no arm64 equivalent and can't be installed under arm64 emulation.
 # ---------------------------------------------------------------------------
-FROM --platform=linux/amd64 emscripten/emsdk:6.0.10 AS tic80-builder
+FROM --platform=linux/amd64 emscripten/emsdk:6.0.13 AS tic80-builder
 ARG TIC80_VERSION
 
 RUN apt-get update && \
@@ -94,7 +94,7 @@ RUN release="$(sed -n 's/^#define TIC_VERSION_IS_RELEASE[[:space:]]*\([01]\).*/\
 # ---------------------------------------------------------------------------
 # Stage: extract the hacdias/webdav static binary.
 # ---------------------------------------------------------------------------
-FROM hacdias/webdav:v5.16.0 AS webdav-extract
+FROM hacdias/webdav:v5.17.3 AS webdav-extract
 
 # ---------------------------------------------------------------------------
 # Final image
