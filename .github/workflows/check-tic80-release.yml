@@ -21,10 +21,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           pinned=$(sed -n 's/^ARG TIC80_VERSION=//p' Dockerfile)
-          latest=$(git ls-remote --tags --refs https://github.com/nesbox/TIC-80 'v*' \
-            | sed 's|.*refs/tags/||' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          # The latest published GitHub Release (never a draft, prerelease, bare tag or commit).
+          latest=$(gh api repos/nesbox/TIC-80/releases/latest --jq .tag_name)
+          printf '%s' "$latest" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "unexpected release tag: '$latest'" >&2; exit 1; }
           echo "pinned=$pinned latest=$latest"
-          [ -n "$latest" ] || { echo "could not determine latest release" >&2; exit 1; }
           [ "$pinned" = "$latest" ] && exit 0
           # Only nag when upstream is actually newer (the pin may be a SHA or a newer snapshot).
           [ "$(printf '%s\n%s\n' "$pinned" "$latest" | sort -V | tail -1)" = "$latest" ] || exit 0
