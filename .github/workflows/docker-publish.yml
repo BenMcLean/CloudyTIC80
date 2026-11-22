@@ -23,6 +23,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write       # sign the attestation via GitHub's OIDC identity
+      attestations: write   # store the attestation
 
     steps:
       - name: Checkout
@@ -118,6 +120,7 @@ jobs:
             type=ref,event=tag
 
       - name: Publish (same build, from cache)
+        id: push
         if: github.ref_type == 'tag'
         uses: docker/build-push-action@v7
         with:
@@ -128,3 +131,14 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Signed SLSA build provenance, stored in GitHub's attestation store and pushed to GHCR
+      # alongside the image. Verify with:
+      #   gh attestation verify oci://ghcr.io/<owner>/<repo>:<tag> --owner <owner>
+      - name: Attest build provenance
+        if: github.ref_type == 'tag'
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
