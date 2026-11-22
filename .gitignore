@@ -2,5 +2,8 @@
 # (webdav-config.yml) and the htpasswd file generated from them. Never commit this.
 /config/
 
+# Local test runtime dir from tests/README.md (copied credentials, generated htpasswd, saved test carts).
+/cfg/
+
 tests/node_modules/
 tests/test-results/

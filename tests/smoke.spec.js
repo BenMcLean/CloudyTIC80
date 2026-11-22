@@ -18,8 +18,8 @@ async function listDav(ctx, path = '/dav/') {
 }
 
 // Opens the player page as `user`; nothing is started until boot().
-async function startPlayer(browser, user) {
-  const context = await browser.newContext({ httpCredentials: { ...user, send: 'always' }, viewport: { width: 960, height: 640 } });
+async function startPlayer(browser, user, contextOptions = {}) {
+  const context = await browser.newContext({ httpCredentials: { ...user, send: 'always' }, viewport: { width: 960, height: 640 }, ...contextOptions });
   const page = await context.newPage();
   const errors = [];
   const log = [];
@@ -348,5 +348,148 @@ test.describe('TIC-80 console features we touch', () => {
     await expect.poll(() => hitUpstream.length, { timeout: 30_000 }).toBeGreaterThan(0);
     expect(hitOurServer).toEqual([]);
     await context.close();
+  });
+});
+
+// The code editor is drawn on a canvas, so there is no text to read back from the page. Instead
+// the tests type into a fresh cart, `save` it from the console, and read the code out of the
+// saved .tic file (the code chunk is stored as plain text).
+test.describe('code editor keys', () => {
+  const pause = (page, ms = 500) => page.waitForTimeout(ms);
+  // The engine reads keys once per frame and loses ones that come and go within a frame, so each
+  // key is held for a moment, and given a moment to take effect before the next one.
+  async function tap(page, key) {
+    await page.keyboard.press(key, { delay: 100 });
+    await page.waitForTimeout(150);
+  }
+
+  // Esc toggles between the console and the editor, but the engine drops it now and then, and
+  // nothing on the canvas says which one is showing. The console echoes every line it accepts
+  // to the browser console as ">text", so pressing Enter tells them apart: an echo means the
+  // console is up (in the editor, Enter only adds a blank line at the caret, which is harmless
+  // here: the tests have the caret at the end of what they typed, or clear the code afterwards).
+  const echoes = new WeakMap();
+  async function consoleIsUp(page) {
+    if (!echoes.has(page)) {
+      echoes.set(page, 0);
+      page.on('console', (m) => { if (/^>/.test(m.text())) echoes.set(page, echoes.get(page) + 1); });
+    }
+    const before = echoes.get(page);
+    await page.keyboard.press('Enter', { delay: 100 });
+    await pause(page);
+    return echoes.get(page) > before;
+  }
+
+  async function switchMode(page, wantConsole) {
+    for (let i = 0; i < 10; i++) {
+      await page.keyboard.press('Escape', { delay: 150 });
+      await pause(page);
+      if ((await consoleIsUp(page)) === wantConsole) return;
+    }
+    throw new Error('could not switch to the ' + (wantConsole ? 'console' : 'editor'));
+  }
+
+  // Fresh cart, open in the code editor with its code emptied (`new` leaves a template there).
+  async function openEditor(page) {
+    await typeCommand(page, 'new lua');
+    await pause(page);
+    await switchMode(page, false);
+    await tap(page, 'Control+A');
+    await tap(page, 'Backspace');
+    await pause(page);   // keys typed straight after the clear lose their first character
+  }
+
+  // Back to the console, save under a new name, and return the saved cart as text.
+  async function savedCode(page) {
+    const name = 'keys' + Date.now().toString(36);
+    await switchMode(page, true);
+    await typeCommand(page, 'save ' + name);
+    const file = name + '.tic';
+    let code = null;
+    await expect.poll(() => page.evaluate((f) => {
+      try { return window.Module.FS.readFile(CloudyTIC80Shim.mountDir() + '/' + f, { encoding: 'binary' }).length; }
+      catch (e) { return 0; }
+    }, file), { timeout: 30_000, message: 'the cart was never saved' }).toBeGreaterThan(0);
+    // A .tic file is a list of chunks: 1 byte type (low 5 bits) + bank, 2 bytes size (LE), 1 reserved, then data.
+    // Type 5 is the code. Joined across banks, it is the cart's source as typed.
+    code = await page.evaluate((f) => {
+      const bytes = window.Module.FS.readFile(CloudyTIC80Shim.mountDir() + '/' + f, { encoding: 'binary' });
+      let out = '';
+      for (let i = 0; i + 4 <= bytes.length;) {
+        const type = bytes[i] & 0x1f;
+        const size = bytes[i + 1] | (bytes[i + 2] << 8);
+        if (type === 5) out += new TextDecoder().decode(bytes.subarray(i + 4, i + 4 + size));
+        i += 4 + size;
+      }
+      return out;
+    }, file);
+    return { code, file };
+  }
+
+  async function cleanup(baseURL, file) {
+    await (await api(baseURL, ALICE)).delete('/dav/' + file);
+  }
+
+  test('Home and End move to the start and end of the current line', async ({ browser, baseURL }) => {
+    const { context, page } = await startPlayer(browser, ALICE);
+    await boot(page);
+    await openEditor(page);
+    await page.keyboard.type('one', { delay: 60 });
+    await tap(page, 'Enter');
+    await page.keyboard.type('two', { delay: 60 });
+    await tap(page, 'Home');
+    await page.keyboard.type('X', { delay: 60 });        // start of line 2
+    await tap(page, 'ArrowUp');
+    await tap(page, 'End');
+    await page.keyboard.type('Y', { delay: 60 });        // end of line 1
+    await tap(page, 'ArrowDown');
+    await tap(page, 'End');
+    await page.keyboard.type('Z', { delay: 60 });        // end of line 2
+    const { code, file } = await savedCode(page);
+    expect(code).toContain('oneY\nXtwoZ');
+    await context.close();
+    await cleanup(baseURL, file);
+  });
+
+  // Copy is checked on its own, from the browser's side: the saved cart can only prove paste.
+  // The clipboard starts with a sentinel, so only a real copy can make this pass.
+  test('Ctrl+C puts the selected text on the browser clipboard', async ({ browser }) => {
+    const { context, page } = await startPlayer(browser, ALICE, { permissions: ['clipboard-read', 'clipboard-write'] });
+    await boot(page);
+    await openEditor(page);
+    await page.evaluate(() => navigator.clipboard.writeText('SENTINEL'));
+    await page.keyboard.type('copy me', { delay: 60 });
+    await tap(page, 'Control+A');
+    await tap(page, 'Control+C');
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText()), { timeout: 10_000 }).toBe('copy me');
+    await context.close();
+  });
+
+  test('copy then paste inside the editor round-trips the text', async ({ browser, baseURL }) => {
+    const { context, page } = await startPlayer(browser, ALICE, { permissions: ['clipboard-read', 'clipboard-write'] });
+    await boot(page);
+    await openEditor(page);
+    await page.keyboard.type('hello', { delay: 60 });
+    await tap(page, 'Control+A');
+    await tap(page, 'Control+C');
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText()), { timeout: 10_000 }).toBe('hello');
+    await tap(page, 'End');                    // drop the selection, caret after "hello"
+    await tap(page, 'Control+V');
+    const { code, file } = await savedCode(page);
+    expect(code).toContain('hellohello');
+    await context.close();
+    await cleanup(baseURL, file);
+  });
+
+  test('Ctrl+V pastes text that came from outside the editor', async ({ browser, baseURL }) => {
+    const { context, page } = await startPlayer(browser, ALICE, { permissions: ['clipboard-read', 'clipboard-write'] });
+    await boot(page);
+    await openEditor(page);
+    await page.evaluate(() => navigator.clipboard.writeText('from outside'));
+    await tap(page, 'Control+V');
+    const { code, file } = await savedCode(page);
+    expect(code).toContain('from outside');
+    await context.close();
+    await cleanup(baseURL, file);
   });
 });
