@@ -137,7 +137,7 @@ jobs:
       #   gh attestation verify oci://ghcr.io/<owner>/<repo>:<tag> --owner <owner>
       - name: Attest build provenance
         if: github.ref_type == 'tag'
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ steps.image.outputs.name }}
           subject-digest: ${{ steps.push.outputs.digest }}
